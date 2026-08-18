@@ -3,6 +3,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <DHT.h>
+#include <WiFi.h>
 
 #define DHT_PIN 4
 #define DHT_TYPE DHT11
@@ -31,7 +32,10 @@ void setup()
 {
     Serial.begin(115200);
 
+    WiFi.setTxPower(WIFI_POWER_11dBm);
+
     // Sensores
+    pinMode(DHT_PIN, INPUT_PULLUP);
     dht.begin();
     pinMode(LDR_PIN, INPUT);
 
@@ -55,7 +59,7 @@ void setup()
     display.setCursor(0, 0);
     display.println("ESTACAO METEOROLOGICA");
     display.println();
-    display.println("Inicializando...");
+    display.println("Testando sensores...");
 
     display.display();
 
@@ -69,76 +73,75 @@ void loop()
 
     int lightState = digitalRead(LDR_PIN);
 
-    if (isnan(temperature) || isnan(humidity))
-    {
-        Serial.println("Erro ao ler DHT11!");
+    // Validação individual do sensor DHT11
+    bool dhtOk = !isnan(temperature) && !isnan(humidity);
+    bool isBright = (lightState == LOW);
 
-        display.clearDisplay();
-        display.setCursor(0, 0);
-        display.println("ERRO");
-        display.println();
-        display.println("Falha no DHT11");
-        display.display();
-
-        delay(2000);
-        return;
-    }
-
-    bool isBright = lightState == LOW;
-
-    // Serial Monitor
+    // Monitor Serial
     Serial.println("====================");
-    Serial.print("Temperatura: ");
-    Serial.print(temperature);
-    Serial.println(" C");
-
-    Serial.print("Umidade: ");
-    Serial.print(humidity);
-    Serial.println(" %");
-
-    Serial.print("Ambiente: ");
-
-    if (isBright)
+    if (dhtOk)
     {
-        Serial.println("CLARO");
+        Serial.print("Temperatura: ");
+        Serial.print(temperature);
+        Serial.println(" C");
+
+        Serial.print("Umidade: ");
+        Serial.print(humidity);
+        Serial.println(" %");
     }
     else
     {
-        Serial.println("ESCURO");
+        Serial.println("DHT11: ERRO DE LEITURA / DESCONECTADO");
     }
 
-    // OLED
-    display.clearDisplay();
+    Serial.print("Ambiente: ");
+    Serial.println(isBright ? "CLARO" : "ESCURO");
 
+    // Atualização do Display OLED
+    display.clearDisplay();
     display.setTextSize(1);
 
+    // Cabeçalho
     display.setCursor(0, 0);
     display.println("ESTACAO METEOROLOGICA");
 
-    display.setCursor(0, 18);
+    // Temperatura
+    display.setCursor(0, 16);
     display.print("Temp: ");
-    display.print(temperature, 1);
-    display.println(" C");
-
-    display.setCursor(0, 30);
-    display.print("Umid: ");
-    display.print(humidity, 1);
-    display.println(" %");
-
-    display.setCursor(0, 42);
-    display.print("Luz:  ");
-
-    if (isBright)
+    if (dhtOk)
     {
-        display.println("CLARO");
+        display.print(temperature, 1);
+        display.println(" C");
     }
     else
     {
-        display.println("ESCURO");
+        display.println("ERRO!");
     }
 
+    // Umidade
+    display.setCursor(0, 28);
+    display.print("Umid: ");
+    if (dhtOk)
+    {
+        display.print(humidity, 1);
+        display.println(" %");
+    }
+    else
+    {
+        display.println("ERRO!");
+    }
+
+    // Luminosidade (LDR)
+    display.setCursor(0, 40);
+    display.print("Luz:  ");
+    display.println(isBright ? "CLARO" : "ESCURO");
+
+    // Rodapé de diagnóstico do status dos sensores
     display.setCursor(0, 54);
-    display.println("ESP32 ONLINE");
+    display.print("DHT: ");
+    display.print(dhtOk ? "OK" : "FALHA");
+    display.print(" | LDR: ");
+    display.print("OK");
 
     display.display();
 
