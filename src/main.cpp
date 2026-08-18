@@ -4,6 +4,9 @@
 #include <Adafruit_SSD1306.h>
 #include <DHT.h>
 #include <WiFi.h>
+#include <PubSubClient.h>
+
+#include "../include/secrets.hpp"
 
 #define DHT_PIN 4
 #define DHT_TYPE DHT11
@@ -19,6 +22,12 @@
 #define OLED_RESET -1
 #define OLED_ADDRESS 0x3C
 
+const char* SSID = ssid;
+const char* PASSWORD = password;
+const char* MQTT_SERVER = mqtt_server;
+
+const int PORT = port;
+
 DHT dht(DHT_PIN, DHT_TYPE);
 
 Adafruit_SSD1306 display(
@@ -27,6 +36,9 @@ Adafruit_SSD1306 display(
     &Wire,
     OLED_RESET
 );
+
+WiFiClient espClient;
+PubSubClient client(espClient);
 
 void setup()
 {
@@ -63,7 +75,23 @@ void setup()
 
     display.display();
 
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+    }
+    client.setServer(mqtt_server, PORT);
+
     delay(2000);
+}
+
+void reconnect() {
+    while (!client.connected()) {
+        if (client.connect("ESP32Client")) {
+        // Succesfully Connected
+        } else {
+            delay(5000);
+        }
+    }
 }
 
 void loop()
@@ -73,11 +101,14 @@ void loop()
 
     int lightState = digitalRead(LDR_PIN);
 
-    // Validação individual do sensor DHT11
+    // DHT11 validation
     bool dhtOk = !isnan(temperature) && !isnan(humidity);
+    bool ldrOk = !isnan(lightState);
+
+    // LDR validation
     bool isBright = (lightState == LOW);
 
-    // Monitor Serial
+    // Serial Monitor
     Serial.println("====================");
     if (dhtOk)
     {
@@ -97,15 +128,15 @@ void loop()
     Serial.print("Ambiente: ");
     Serial.println(isBright ? "CLARO" : "ESCURO");
 
-    // Atualização do Display OLED
+    // OLED displaye update
     display.clearDisplay();
     display.setTextSize(1);
 
-    // Cabeçalho
+    // Header
     display.setCursor(0, 0);
     display.println("ESTACAO METEOROLOGICA");
 
-    // Temperatura
+    // Temperature
     display.setCursor(0, 16);
     display.print("Temp: ");
     if (dhtOk)
@@ -118,7 +149,7 @@ void loop()
         display.println("ERRO!");
     }
 
-    // Umidade
+    // Umidity
     display.setCursor(0, 28);
     display.print("Umid: ");
     if (dhtOk)
@@ -131,19 +162,22 @@ void loop()
         display.println("ERRO!");
     }
 
-    // Luminosidade (LDR)
+    // Lumonosity (LDR)
     display.setCursor(0, 40);
     display.print("Luz:  ");
     display.println(isBright ? "CLARO" : "ESCURO");
 
-    // Rodapé de diagnóstico do status dos sensores
+    // Sensors status diagnosis footer
     display.setCursor(0, 54);
     display.print("DHT: ");
     display.print(dhtOk ? "OK" : "FALHA");
     display.print(" | LDR: ");
-    display.print("OK");
+    display.print(ldrOk ? "OK" : "FALHA");
 
     display.display();
+
+    String message = "Temperature: " + String(temperature) + "\nHumidity: " + humidity + "\nLuminosity: " + isBright;
+    client.publish("esp32/sensor", message.c_str());
 
     delay(2000);
 }
