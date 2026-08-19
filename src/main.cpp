@@ -34,11 +34,13 @@ int mapData[MAP_W][MAP_H];
 #define MAX_HEALTH 300
 int playerHealth = MAX_HEALTH;
 
-// Difficulty setup
+// Difficulty configuration
 int currentDifficulty = 1; 
-const char* diffNames[]   = {"EASY", "MEDIUM", "HARD"};
-const int diffDamage[]    = {10, 20, 35};
-const int diffScoreMult[] = {1, 2, 4};
+const char* diffNames[]          = {"EASY", "MEDIUM", "HARD"};
+const char* diffHUD[]            = {"E", "M", "H"};
+const int diffDamage[]           = {15, 30, 50};
+const unsigned long diffCooldown[] = {1800, 1100, 600}; // Attack speed scales with difficulty
+const int diffScoreMult[]        = {1, 2, 4};
 
 int score = 0;
 unsigned long lastDamageTime = 0;
@@ -79,10 +81,10 @@ bool isAnyButtonPressed() {
 }
 
 void waitForButtonRelease() {
-    unsigned long timeout = millis();
-    while(isAnyButtonPressed() && (millis() - timeout < 1000)) {
+    while(isAnyButtonPressed()) {
         delay(10);
     }
+    delay(50);
 }
 
 int getRemainingEnemies() {
@@ -93,7 +95,6 @@ int getRemainingEnemies() {
     return count;
 }
 
-// Plays melody and interrupts if any button is pressed
 bool playDoomThemeWithInterrupt() {
     int size = sizeof(doom_melody) / sizeof(int);
     for (int i = 0; i < size; i++) {
@@ -205,11 +206,12 @@ void updateEnemies(unsigned long currentMillis) {
             double dy = enemies[i].y - posY;
             double dist = sqrt(dx * dx + dy * dy);
 
-            if (dist < 3.0 && (currentMillis - lastDamageTime > 1500)) {
+            // Damage rate and amount now strictly respect difficulty
+            if (dist < 2.5 && (currentMillis - lastDamageTime > diffCooldown[currentDifficulty])) {
                 playerHealth -= diffDamage[currentDifficulty];
                 if (playerHealth < 0) playerHealth = 0;
                 lastDamageTime = currentMillis;
-                tone(BUZZER_PIN, 50, 200); 
+                tone(BUZZER_PIN, 50, 150); 
             }
         }
     }
@@ -218,6 +220,7 @@ void updateEnemies(unsigned long currentMillis) {
 void resetGame() {
     playerHealth = MAX_HEALTH;
     score = 0; 
+    lastDamageTime = 0;
     posX = 1.5; 
     posY = 1.5;
     dirX = -1.0; 
@@ -246,19 +249,26 @@ void drawGun(bool flash) {
 }
 
 void drawUI() {
-    display.drawRect(2, 2, 35, 6, SSD1306_WHITE);
-    int hpWidth = (playerHealth * 31) / MAX_HEALTH;
+    display.drawRect(2, 2, 25, 6, SSD1306_WHITE);
+    int hpWidth = (playerHealth * 21) / MAX_HEALTH;
     if (hpWidth > 0) {
         display.fillRect(4, 4, hpWidth, 2, SSD1306_WHITE);
     }
     
     display.setTextSize(1);
     
-    display.setCursor(42, 1);
+    // Remaining Enemies
+    display.setCursor(32, 1);
     display.print("E:");
     display.print(getRemainingEnemies());
 
-    display.setCursor(75, 1);
+    // Difficulty Indicator
+    display.setCursor(62, 1);
+    display.print("D:");
+    display.print(diffHUD[currentDifficulty]);
+
+    // Score
+    display.setCursor(85, 1);
     display.print("PTS:");
     display.print(score);
 }
@@ -358,14 +368,15 @@ void drawEnemies(double zBuffer[]) {
 }
 
 void showTitleScreen() {
+    // Ensures all buttons are released before listening for menu inputs
     waitForButtonRelease();
-    int selectedDiff = 1;
     
+    int selectedDiff = currentDifficulty;
     int musicIndex = 0;
     unsigned long noteStartTime = 0;
     int noteDuration = 0;
     
-    unsigned long lastInputTime = 0;
+    unsigned long lastInputTime = millis();
     bool confirmed = false;
 
     while(!confirmed) {
@@ -392,7 +403,7 @@ void showTitleScreen() {
         display.println("DIFFICULTY:");
         
         display.setTextSize(2);
-        int textOffset = (selectedDiff == 0) ? 32 : ((selectedDiff == 1) ? 26 : 38);
+        int textOffset = (selectedDiff == 0) ? 40 : ((selectedDiff == 1) ? 28 : 40);
         display.setCursor(textOffset, 34);
         display.print(diffNames[selectedDiff]);
 
@@ -401,7 +412,7 @@ void showTitleScreen() {
         display.println("L/R: Change | FIRE: OK");
         display.display();
 
-        if (now - lastInputTime > 200) {
+        if (now - lastInputTime > 250) {
             if (digitalRead(BTN_TURN_L) == LOW) {
                 selectedDiff = (selectedDiff - 1 + 3) % 3;
                 tone(BUZZER_PIN, 400, 40);
